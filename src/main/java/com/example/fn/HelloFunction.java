@@ -14,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Random;
 import java.util.stream.Collectors;
 import java.util.Base64;
 import jakarta.ws.rs.client.ClientBuilder;
@@ -25,6 +26,7 @@ import jakarta.ws.rs.core.MultivaluedHashMap;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Random;
 
 public class HelloFunction {
 
@@ -99,7 +101,9 @@ public class HelloFunction {
         } else {
             String callbackUri = AUTH_URL;
             String clientId = CLIENT_ID;
-            String idcsLoginUrl = "https://" + IDCS_URL + ".identity.oraclecloud.com:443/oauth2/v1/authorize?client_id=" + clientId + "&response_type=code&redirect_uri=" + callbackUri + "&scope=openid&state=1234";
+            Random rand = new Random();
+            int randomState = rand.nextInt(10000) + 1;
+            String idcsLoginUrl = "https://" + IDCS_URL + ".identity.oraclecloud.com:443/oauth2/v1/authorize?client_id=" + clientId + "&response_type=code&redirect_uri=" + callbackUri + "&scope=openid&state=" + randomState;
             hctx.setResponseHeader("Location", idcsLoginUrl);
             hctx.setStatusCode(302);
             System.out.println("Redirect to " + idcsLoginUrl);
