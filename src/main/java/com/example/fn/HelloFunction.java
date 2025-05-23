@@ -12,6 +12,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.Base64;
@@ -27,11 +28,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class HelloFunction {
 
-    private String APP_URL = "";
-    private String AUTH_URL = "";
-    private String CLIENT_ID = "";
-    private String CLIENT_SECRET = "";
-    private String IDCS_URL = "";
+    private static String APP_URL       = "";
+    private static String AUTH_URL      = "";
+    private static String CLIENT_ID     = "";
+    private static String CLIENT_SECRET = "";
+    private static String IDCS_URL      = "";
 
     @FnConfiguration
     public void setUp(RuntimeContext ctx) throws Exception {
@@ -44,41 +45,24 @@ public class HelloFunction {
 
     public String handleRequest(final HTTPGatewayContext hctx, final InputEvent input) {
 
-        String ret = "AUTHENTICATE";
+        String userEmail = "";
+        String ret       = "";
 
         System.out.println("==== FUNC ====");
         try {
             List<String> lines = Files.readAllLines(Paths.get("/func.yaml")).stream().limit(3).collect(Collectors.toList());
             lines.forEach(System.out::println);
-            //hctx.getHeaders().getAll().forEach((key, value) -> System.out.println(key + ": " + value));
-            //input.getHeaders().getAll().forEach((key, value) -> System.out.println(key + ": " + value));
+            hctx.getHeaders().getAll().forEach((key, value) -> System.out.println(key + ": " + value));
+            input.getHeaders().getAll().forEach((key, value) -> System.out.println(key + ": " + value));
             hctx.getQueryParameters().getAll().forEach((key, value) -> System.out.println(key + ": " + value));
         } catch (Exception e) {
             System.out.println("Error reading func.yaml: " + e.getMessage());
         }
         System.out.println("==============");
 
-        if(hctx.getMethod().equalsIgnoreCase("post")) {
-            String body = input.consumeBody((InputStream is) -> {
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
-                    return reader.lines().collect(Collectors.joining());
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            });
-            ret = ret + " POST: " + body;
-        }
-
-        if(hctx.getMethod().equalsIgnoreCase("get")) {
-            ret = ret + " GET";
-        }
-
         String code = hctx.getQueryParameters().get("code").orElse(null);
-        ret = ret + " code: " + code;
-
         if(code != null)
         {
-            ret = ret + " code: " + code;
             try {
                 String clientId = CLIENT_ID;
                 String clientSecret = CLIENT_SECRET;
@@ -101,17 +85,13 @@ public class HelloFunction {
                 if(tokenResponse.getStatus() == 200)
                 {
                     String accessToken = tokenResponse.readEntity(String.class);
-                    String userEmail = getEmail(accessToken);
-                    ret = ret + " USER EMAIL: " + userEmail;
+                    userEmail = getEmail(accessToken);
                     hctx.setResponseHeader("Set-Cookie","Email=" + userEmail); // + "; HttpOnly");
                     String mainUrl = APP_URL;
                     hctx.setResponseHeader("Location", mainUrl);
                     hctx.setStatusCode(302);
-                    ret = ret + " Redirect to " + mainUrl;
-                    System.out.println(ret);
                 } else {
                     System.out.println("Access_token ERROR");
-                    ret = ret + "Access_token ERROR";
                 }
             } catch (Exception e) {
                 e.printStackTrace();
@@ -122,10 +102,49 @@ public class HelloFunction {
             String idcsLoginUrl = "https://" + IDCS_URL + ".identity.oraclecloud.com:443/oauth2/v1/authorize?client_id=" + clientId + "&response_type=code&redirect_uri=" + callbackUri + "&scope=openid&state=1234";
             hctx.setResponseHeader("Location", idcsLoginUrl);
             hctx.setStatusCode(302);
-            ret = "Redirect to " + idcsLoginUrl;
-            System.out.println(ret);
+            System.out.println("Redirect to " + idcsLoginUrl);
         }
 
+        // This last part is for APIGW authorizer function
+        // For APIGW just evaluate the Email cookie header and return response accordingly
+        // Expects only 1 cookie set (Email)
+        // Default denies access unless Email is found from Cookie
+        boolean FOUND = false;
+        String body = input.consumeBody((InputStream is) -> {
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
+                return reader.lines().collect(Collectors.joining());
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+        System.out.println("Body: " + body);
+        if(body.length() > 0) {
+            String[] bodyTokens = body.split(",");
+            List<String> tokenizedBody = Arrays.stream(bodyTokens).map(String::trim).collect(Collectors.toList());
+            for (String token : tokenizedBody) {
+                //System.out.println(token);
+                if (token.indexOf("Email=") > -1) {
+                    userEmail = token.substring(token.indexOf("Email=") + 6,  token.indexOf("\"}"));
+                    System.out.println("userEmail : " + userEmail);
+                    FOUND = true;
+                }
+            }
+        }
+        if(FOUND) {
+            ret = "{ " +
+                    "\"active\": true," +
+                    "\"principal\": \"fnsimplejava\"," +
+                    "\"scope\": [\"fnsimplejava\"]," +
+                    "\"expiresAt\": \"2025-12-31T00:00:00+00:00\"," +
+                    "\"context\": { \"Sub\": \"" + userEmail + "\" }" +
+                    " }";
+        } else {
+            ret = "{ " +
+                    "\"active\": false," +
+                    "\"wwwAuthenticate\": \"Beare realm=\\\"" + APP_URL + "\\\"\"" +
+                    " }";
+        }
+        System.out.println(ret);
         return ret;
     }
 
