@@ -50,7 +50,7 @@ public class HelloFunction {
 
     public String handleRequest(final HTTPGatewayContext hctx, final InputEvent input) {
 
-        String BEARER = "";
+        String bearer = "";
         String ret       = "";
 
         System.out.println("==== FUNC ====");
@@ -116,8 +116,8 @@ public class HelloFunction {
 
         // This last part is for APIGW authorizer function
         // For APIGW just evaluate the bearer cookie header and return response accordingly
-        // Expects only 1 cookie set (bearer)
-        // Default denies access unless bearer is found from Cookie
+        // Expects only 1 cookie set
+        // By default denies access unless bearer is found from Cookie
         boolean FOUND = false;
         String body = input.consumeBody((InputStream is) -> {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
@@ -132,8 +132,8 @@ public class HelloFunction {
             List<String> tokenizedBody = Arrays.stream(bodyTokens).map(String::trim).collect(Collectors.toList());
             for (String token : tokenizedBody) {
                 if (token.indexOf("bearer=") > -1) {
-                    BEARER = token.substring(token.indexOf("bearer=") + 7,  token.indexOf("\"}"));
-                    System.out.println("BEARER : " + BEARER);
+                    bearer = token.substring(token.indexOf("bearer=") + 7,  token.indexOf("\"}"));
+                    System.out.println("bearer : " + bearer);
                     FOUND = true;
                 }
             }
@@ -147,7 +147,7 @@ public class HelloFunction {
                     "\"principal\": \"fnsimplejava\"," +
                     "\"scope\": [\"fnsimplejava\"]," +
                     "\"expiresAt\": \"" + expiryDate + "\"," +
-                    "\"context\": { \"Sub\": \"" + BEARER + "\" }" +
+                    "\"context\": { \"Sub\": \"" + bearer + "\" }" +
                     " }";
         } else {
             ret = "{ " +
