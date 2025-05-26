@@ -12,6 +12,8 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
@@ -27,6 +29,7 @@ import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Random;
+import java.time.LocalDateTime;
 
 public class HelloFunction {
 
@@ -47,15 +50,15 @@ public class HelloFunction {
 
     public String handleRequest(final HTTPGatewayContext hctx, final InputEvent input) {
 
-        String userEmail = "";
+        String BEARER = "";
         String ret       = "";
 
         System.out.println("==== FUNC ====");
         try {
             List<String> lines = Files.readAllLines(Paths.get("/func.yaml")).stream().limit(3).collect(Collectors.toList());
             lines.forEach(System.out::println);
-            hctx.getHeaders().getAll().forEach((key, value) -> System.out.println(key + ": " + value));
-            input.getHeaders().getAll().forEach((key, value) -> System.out.println(key + ": " + value));
+            //hctx.getHeaders().getAll().forEach((key, value) -> System.out.println(key + ": " + value));
+            //input.getHeaders().getAll().forEach((key, value) -> System.out.println(key + ": " + value));
             hctx.getQueryParameters().getAll().forEach((key, value) -> System.out.println(key + ": " + value));
         } catch (Exception e) {
             System.out.println("Error reading func.yaml: " + e.getMessage());
@@ -87,8 +90,10 @@ public class HelloFunction {
                 if(tokenResponse.getStatus() == 200)
                 {
                     String accessToken = tokenResponse.readEntity(String.class);
-                    userEmail = getEmail(accessToken);
-                    hctx.setResponseHeader("Set-Cookie","Email=" + userEmail); // + "; HttpOnly");
+                    ObjectMapper objectMapper = new ObjectMapper();
+                    String[] chunks = accessToken.split("\\.");
+                    String token = chunks[1];
+                    hctx.setResponseHeader("Set-Cookie","bearer=" + token); // + "; HttpOnly");
                     String mainUrl = APP_URL;
                     hctx.setResponseHeader("Location", mainUrl);
                     hctx.setStatusCode(302);
@@ -110,9 +115,9 @@ public class HelloFunction {
         }
 
         // This last part is for APIGW authorizer function
-        // For APIGW just evaluate the Email cookie header and return response accordingly
-        // Expects only 1 cookie set (Email)
-        // Default denies access unless Email is found from Cookie
+        // For APIGW just evaluate the bearer cookie header and return response accordingly
+        // Expects only 1 cookie set (bearer)
+        // Default denies access unless bearer is found from Cookie
         boolean FOUND = false;
         String body = input.consumeBody((InputStream is) -> {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
@@ -126,21 +131,23 @@ public class HelloFunction {
             String[] bodyTokens = body.split(",");
             List<String> tokenizedBody = Arrays.stream(bodyTokens).map(String::trim).collect(Collectors.toList());
             for (String token : tokenizedBody) {
-                //System.out.println(token);
-                if (token.indexOf("Email=") > -1) {
-                    userEmail = token.substring(token.indexOf("Email=") + 6,  token.indexOf("\"}"));
-                    System.out.println("userEmail : " + userEmail);
+                if (token.indexOf("bearer=") > -1) {
+                    BEARER = token.substring(token.indexOf("bearer=") + 7,  token.indexOf("\"}"));
+                    System.out.println("BEARER : " + BEARER);
                     FOUND = true;
                 }
             }
         }
         if(FOUND) {
+            LocalDateTime dateTime = LocalDateTime.now().plusDays(1);
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'+00:00'");
+            String expiryDate = dateTime.format(formatter);
             ret = "{ " +
                     "\"active\": true," +
                     "\"principal\": \"fnsimplejava\"," +
                     "\"scope\": [\"fnsimplejava\"]," +
-                    "\"expiresAt\": \"2025-12-31T00:00:00+00:00\"," +
-                    "\"context\": { \"Sub\": \"" + userEmail + "\" }" +
+                    "\"expiresAt\": \"" + expiryDate + "\"," +
+                    "\"context\": { \"Sub\": \"" + BEARER + "\" }" +
                     " }";
         } else {
             ret = "{ " +
@@ -150,21 +157,6 @@ public class HelloFunction {
         }
         System.out.println(ret);
         return ret;
-    }
 
-    private String getEmail(String jwtToken) {
-        String email = null;
-        ObjectMapper objectMapper = new ObjectMapper();
-        try {
-            String[] chunks = jwtToken.split("\\.");
-            Base64.Decoder decoder = Base64.getUrlDecoder();
-            String payload = new String(decoder.decode(chunks[1]));
-            JwtData jwtData = objectMapper.readValue(payload, JwtData.class);
-            email = jwtData.sub;
-        } catch (Exception e)
-        {
-            System.out.println("Email cannot be read from jwt, error:" + e.getMessage());
-        }
-        return email;
     }
 }
