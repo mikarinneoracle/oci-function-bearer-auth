@@ -106,8 +106,8 @@ public class HelloFunction {
                 e.printStackTrace();
             }
         } else {
-            // Redirect to OIDC login (works only with local Fn
-            // APIGW authorizer won't follow this redirect
+            // Redirect to OIDC login. This works only with local Fn
+            // APIGW authorizer function won't follow this redirect (see the last part of the function for APIGW)
             String callbackUri = AUTH_URL;
             String clientId = CLIENT_ID;
             Random rand = new Random();
