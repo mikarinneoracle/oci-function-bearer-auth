@@ -65,6 +65,8 @@ public class HelloFunction {
         }
         System.out.println("==============");
 
+        // If code is passed as part of the OIDC login process it to get the access token
+        // and save it as bearer cookie for the app
         String code = hctx.getQueryParameters().get("code").orElse(null);
         if(code != null)
         {
@@ -104,6 +106,8 @@ public class HelloFunction {
                 e.printStackTrace();
             }
         } else {
+            // Redirect to OIDC login (works only with local Fn
+            // APIGW authorizer won't follow this redirect
             String callbackUri = AUTH_URL;
             String clientId = CLIENT_ID;
             Random rand = new Random();
