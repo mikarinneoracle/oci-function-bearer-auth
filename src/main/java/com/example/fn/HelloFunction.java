@@ -141,9 +141,11 @@ public class HelloFunction {
                     System.out.println(cookie);
                     if (cookie.indexOf("bearer=") > -1) {
                         bearer = cookie.substring(cookie.indexOf("bearer=") + 7, cookie.length());
-                        String sub = getSubFromJwt(bearer);
-                        System.out.println("Sub from BEARER COOKIE: " + sub);
-                        FOUND = true;
+                        if(bearer.length() > 0) {
+                            String sub = getSubFromJwt(bearer);
+                            System.out.println("Sub from BEARER COOKIE: " + sub);
+                            FOUND = true;
+                        }
                     }
                 }
             } catch(Exception e)
