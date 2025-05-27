@@ -91,12 +91,13 @@ public class HelloFunction {
                 //System.out.println("Status Info:" + tokenResponse.getStatusInfo());
                 if(tokenResponse.getStatus() == 200)
                 {
-                    String accessToken = tokenResponse.readEntity(String.class);
+                    // Redirect to the app main page with ID_TOKEN (for logout later)
+                    String response = tokenResponse.readEntity(String.class);
                     ObjectMapper objectMapper = new ObjectMapper();
-                    String[] chunks = accessToken.split("\\.");
-                    String token = chunks[1];
-                    hctx.setResponseHeader("Set-Cookie","bearer=" + token); // + "; HttpOnly");
-                    String mainUrl = APP_URL;
+                    AuthToken authToken = objectMapper.readValue(response, AuthToken.class);
+                    String cookie = "bearer=" + authToken.access_token; // + "; HttpOnly"
+                    hctx.setResponseHeader("Set-Cookie",cookie);
+                    String mainUrl = APP_URL + "?id_token=" + authToken.id_token;
                     hctx.setResponseHeader("Location", mainUrl);
                     hctx.setStatusCode(302);
                 } else {
@@ -106,8 +107,7 @@ public class HelloFunction {
                 e.printStackTrace();
             }
         } else {
-            // Redirect to OIDC login. This works only with local Fn
-            // APIGW authorizer function won't follow this redirect (see the last part of the function for APIGW)
+            // Redirect to OIDC login
             String callbackUri = AUTH_URL;
             String clientId = CLIENT_ID;
             Random rand = new Random();
@@ -120,26 +120,35 @@ public class HelloFunction {
 
         // This last part is for APIGW authorizer function
         // For APIGW just evaluate the bearer cookie header and return response accordingly
-        // Expects only 1 cookie set
         // By default denies access unless bearer is found from Cookie
         boolean FOUND = false;
-        String body = input.consumeBody((InputStream is) -> {
+        String json = input.consumeBody((InputStream is) -> {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
                 return reader.lines().collect(Collectors.joining());
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
         });
-        System.out.println("Body: " + body);
-        if(body.length() > 0) {
-            String[] bodyTokens = body.split(",");
-            List<String> tokenizedBody = Arrays.stream(bodyTokens).map(String::trim).collect(Collectors.toList());
-            for (String token : tokenizedBody) {
-                if (token.indexOf("bearer=") > -1) {
-                    bearer = token.substring(token.indexOf("bearer=") + 7,  token.indexOf("\"}"));
-                    System.out.println("bearer : " + bearer);
-                    FOUND = true;
+        System.out.println("Body: " + json);
+        if(json.length() > 0) {
+            ObjectMapper objectMapper = new ObjectMapper();
+            try {
+                Body body = objectMapper.readValue(json, Body.class);
+                System.out.println("Body token: " + body.token);
+                String[] bearerTokens = body.token.split(";");
+                List<String> tokenizedBearer = Arrays.stream(bearerTokens).map(String::trim).collect(Collectors.toList());
+                for (String cookie : tokenizedBearer) {
+                    System.out.println(cookie);
+                    if (cookie.indexOf("bearer=") > -1) {
+                        bearer = cookie.substring(cookie.indexOf("bearer=") + 7, cookie.length());
+                        String sub = getSubFromJwt(bearer);
+                        System.out.println("Sub from BEARER COOKIE: " + sub);
+                        FOUND = true;
+                    }
                 }
+            } catch(Exception e)
+            {
+                System.out.println(e.getMessage());
             }
         }
         if(FOUND) {
@@ -156,11 +165,26 @@ public class HelloFunction {
         } else {
             ret = "{ " +
                     "\"active\": false," +
-                    "\"wwwAuthenticate\": \"Beare realm=\\\"" + APP_URL + "\\\"\"" +
+                    "\"wwwAuthenticate\": \"Bearer realm=\\\"" + APP_URL + "\\\"\"" +
                     " }";
         }
         System.out.println(ret);
         return ret;
+    }
 
+    private String getSubFromJwt(String bearer) {
+        String sub = null;
+        ObjectMapper objectMapper = new ObjectMapper();
+        try {
+            String[] chunks = bearer.split("\\.");
+            Base64.Decoder decoder = Base64.getUrlDecoder();
+            String payload = new String(decoder.decode(chunks[1]));
+            JwtData jwtData = objectMapper.readValue(payload, JwtData.class);
+            sub = jwtData.sub;
+        } catch (Exception e)
+        {
+            System.out.println("Sub cannot be read from bearer, error:" + e.getMessage());
+        }
+        return sub;
     }
 }
